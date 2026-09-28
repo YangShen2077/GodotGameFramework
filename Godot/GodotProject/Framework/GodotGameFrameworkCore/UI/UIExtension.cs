@@ -127,5 +127,60 @@ namespace GodotGameFramework.UI
             IUIForm[] uiForms = uiComponent.GetUIForms(formConfig.AssetPath);
             return uiForms.Length > 0;
         }
+        /// <summary>
+        /// 若存在多个相同类型的UI表单，关闭最上层的UI表单
+        /// </summary>
+        /// <param name="uiComponent"></param>
+        /// <param name="formId"></param>
+        /// <param name="userData"></param>
+        public static void CloseUIForm(this UIComponent uiComponent, UIFormId formId, object userData = null)
+        {
+            UIFormConfig formConfig = ConfigSystem.Instance.Tables.TbUIFormConfig.DataList.FirstOrDefault(x => x.UIFormId == formId);
+            IUIForm uiForm = uiComponent.GetUIForm(formConfig.AssetPath);
+            if (uiForm != null)
+            {
+                uiComponent.CloseUIForm(uiForm, userData);
+            }
+        }
+        /// <summary>
+        /// 关闭所有相同类型的UIForm
+        /// </summary>
+        /// <param name="uiComponent"></param>
+        /// <param name="formId"></param>
+        /// <param name="userData"></param>
+        public static void CloseUIForms(this UIComponent uiComponent, UIFormId formId, object userData = null)
+        {
+            UIFormConfig formConfig = ConfigSystem.Instance.Tables.TbUIFormConfig.DataList.FirstOrDefault(x => x.UIFormId == formId);
+            IUIForm[] uiForms = uiComponent.GetUIForms(formConfig.AssetPath);
+            for (int i = 0; i < uiForms.Length; i++)
+            {
+                if (uiForms[i] != null && uiComponent.IsValidUIForm(uiForms[i]))
+                {
+                    uiComponent.CloseUIForm(uiForms[i], userData);
+                }
+            }
+        }
+        /// <summary>
+        /// 指定类型的面板是否处于打开状态
+        /// </summary>
+        /// <param name="uiComponent"></param>
+        /// <param name="formId"></param>
+        /// <returns></returns>
+        public static bool IsOpeningForm(this UIComponent uiComponent, UIFormId formId)
+        {
+            UIFormConfig formConfig = ConfigSystem.Instance.Tables.TbUIFormConfig.DataList.FirstOrDefault(x => x.UIFormId == formId);
+            IUIForm[] uiForms = uiComponent.GetAllLoadedUIForms();
+            for (int i = 0; i < uiForms.Length; i++)
+            {
+                if (uiForms[i] != null && uiComponent.IsValidUIForm(uiForms[i]))
+                {
+                    if (uiForms[i].UIFormAssetName == formConfig.AssetPath)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
     }
 }

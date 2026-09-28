@@ -44,6 +44,12 @@
 | [ResourceHotUpdateAudit.md](ResourceHotUpdateAudit.md) | 资源热更审计：风险项清单与修复状态（2026-07 复审，致命项全部修复 ✅，维持现状维护） |
 | [CodeHotUpdateDesign.md](CodeHotUpdateDesign.md) | ⚠️ **已搁置** — C# 程序集热更方案设计（ALC），等待华佗团队完成 Godot 热更适配后重启
 
+## 开发环境
+
+| 文档 | 内容 |
+|------|------|
+| [VSCodeDebugging.md](VSCodeDebugging.md) | VS Code 一键 F5 断点调试：launch.json/tasks.json 配置、编译产物与符号（pdb）关系、断点不命中排查清单、为什么不能像 Unity 那样附加到编辑器 |
+
 ## 其他
 
 - `engine-reference/` — 引擎版本参考资料
