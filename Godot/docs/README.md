@@ -44,13 +44,36 @@
 | [ResourceHotUpdateAudit.md](ResourceHotUpdateAudit.md) | 资源热更审计：风险项清单与修复状态（2026-07 复审，致命项全部修复 ✅，维持现状维护） |
 | [CodeHotUpdateDesign.md](CodeHotUpdateDesign.md) | ⚠️ **已搁置** — C# 程序集热更方案设计（ALC），等待华佗团队完成 Godot 热更适配后重启
 
-## 开发环境
+## 玩法功能
+
+> 每个玩法功能一篇，记录需求规则、红线、架构与踩坑，让 AI 改代码前快速理解。模板与维护约定见 [features/README.md](features/README.md)（功能完成即更新）。
 
 | 文档 | 内容 |
 |------|------|
-| [VSCodeDebugging.md](VSCodeDebugging.md) | VS Code 一键 F5 断点调试：launch.json/tasks.json 配置、编译产物与符号（pdb）关系、断点不命中排查清单、为什么不能像 Unity 那样附加到编辑器 |
+| [features/CombatSystem.md](features/CombatSystem.md) | 日间探索战斗（打木桩演示）：三预制体分离、场景切换链路、方案B 恢复标记、D4 临时代码数值 |
+| [features/DayCycleSystem.md](features/DayCycleSystem.md) | 日循环：早→中→晚→经营后 四阶段 FSM、手动推进、方案B 阶段恢复 |
+| [features/RestaurantSystem.md](features/RestaurantSystem.md) | 经营与客人（**总纲**）：玩法整体、端到端数据流、横切服务（HUD/手持）、配表总表、测试总览；子领域见下 |
+| [features/GuestSystem.md](features/GuestSystem.md) | 客人系统：客人生成/自动入座/生命周期/耐心/上菜/结账、营业节奏 |
+| [features/StaffSystem.md](features/StaffSystem.md) | 员工系统：员工安排/餐馆升级/员工 AI（厨师限量、服务员上菜点单） |
+| [features/CookingSystem.md](features/CookingSystem.md) | 后厨与做菜：多灶台并行、备菜/取菜、InventorySystem 衔接 |
+| [features/MenuOrderSystem.md](features/MenuOrderSystem.md) | 菜单与订单：正式菜单、点单选菜、订单队列（开放订单）、上菜核销 |
+| [features/SatisfactionSystem.md](features/SatisfactionSystem.md) | 顾客满意度：同行组共享最终满意度 / 当晚平均 S（按人数加权）、厨艺体验分、出品质量逐份归因（DishQuality）、控制台公式日志 |
+| [features/CrowdReportSystem.md](features/CrowdReportSystem.md) | 客流报告：今日概况 + 备料方向（优先/适量/特殊）、随机抽取六步流程、数据源注入 |
+| [features/InventorySystem.md](features/InventorySystem.md) | 背包/仓库/商店：网格容器、容器级堆叠策略、跨区转移/买卖/烹饪 |
+| [features/Common.md](features/Common.md) | 全局速度与暂停（Common）：Tab 循环 1x/2x/4x、打开配表 pauseScene 界面暂停场景、纯 C# GameSpeedService + 公共层 GameSpeedSystem |
+
+## 项目设计经验（architecture/）
+
+> GGF **框架**系统文档见上方 Engine/Framework 分区；本区存放 **TheGame 项目侧**的架构设计与测试经验，避免与框架文档混淆。
+
+| 文档 | 内容 |
+|------|------|
+| [architecture/ArchitectureDesign.md](architecture/ArchitectureDesign.md) | 领域架构与程序设计经验（跨玩法）：表现/领域分层、可测准绳、单一真值 owner、聚合根不变量、DDD 落地取舍、应用层试点 OrderingService、DI 演进方向 |
+| [architecture/TestingSystem.md](architecture/TestingSystem.md) | 单元测试经验：gdUnit4 C# 套件、headless 运行、脱离配表造假数据三种方式、固定随机种子、结构不变量断言 |
 
 ## 其他
 
-- `engine-reference/` — 引擎版本参考资料
-- 文档风格约定：中文；开头引用块标注适用版本与代码路径；章节顺序为 概述 → 架构与数据流 → 文件清单 → 核心机制 → 组件与 API → FAQ → 已知边界；**所有断言以实际代码为准**，与 CLAUDE.md 冲突时以系统文档为准（CLAUDE.md 与本文档已于 2026-08 同步修订）
+| 文档 | 内容 |
+|------|------|
+| [engine-reference/](engine-reference/) | 引擎版本参考资料
+- 文档风格约定：中文；开头引用块标注适用版本与代码路径；章节顺序为 概述 → 架构与数据流 → 文件清单 → 核心机制 → 组件与 API → FAQ → 已知边界；**所有断言以实际代码为准**，与 CLAUDE.md 冲突时以系统文档为准（CLAUDE.md 与本文档已于 2026-08 同步修订）。玩法功能文档另见 [features/README.md](features/README.md) 的完整模板

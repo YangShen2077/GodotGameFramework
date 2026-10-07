@@ -476,7 +476,37 @@ Inspector 底部三个按钮：**Bind UI Script**（生成+挂载）、**Delete 
 
 ---
 
+### 6.5 命令行生成工具（headless）
+
+生成逻辑抽在 `addons/ComponentInsoector/ScriptGenerateCore.cs`（Inspector 按钮与命令行共用，避免两处漂移）。可在 headless 编辑器模式程序化执行"Generate Script"：
+
+```
+godot --headless --editor --path GodotProject -- --script-generate --scene=res://TheGame/UIs/XxxForm.tscn --node=XxxForm
+```
+
+- 由 `ComponentInsoector`（EditorPlugin）在 `_EnterTree` 检测 `--script-generate` 参数执行：生成 Ge（覆盖）+ Logic（仅首次）→ 挂脚本 → 绑定 `m_` 子节点 → 重新 Pack 保存场景 → 退出
+- `--node` 传根节点名（即界面名），如 `--node=SettingForm`；子节点目标传相对根路径
+- 生成的 Ge/tscn 与编辑器按钮产物格式一致（`node_paths=PackedStringArray` + NodePath 绑定，已验证）
+- 注意：headless 下 EditorScript 无法用 `-s` 运行（该版本 `--script` 只接受 MainLoop/SceneTree），故走插件启动路径
+
+#### 6.5.1 它是静态直调，不需要"注入"，但必须用编辑器模式构建
+
+`ScriptGenerateCore` 是**静态类**：生成逻辑全部放在 `ScriptGenerateCore.Generate(Node)` 里（读模板/ScriptGenerateRes → 写 Ge(覆盖)/Logic(仅首次) → 挂脚本 → 绑定 `m_` 子节点）。Inspector 的 "Generate Script" 按钮与 headless `--script-generate` 都是薄入口，最终都调用同一个静态方法——所以命令行本身就是"方便地直接调用静态类"，**不必打开编辑器界面点按钮**，也**绝不能手工改 Ge**。
+
+唯一真正的门槛是 **`#if TOOLS` 编译条件**：整条生成自包含 `ScriptGenerateCore.cs`/`ScriptGenerateInspector.cs`/`ComponentInsoector.cs` 都包在 `TOOLS` 下。而普通 `dotnet build` **不定义 `TOOLS`**（CSProject 只有 `ENABLE_LOG` 等，`TOOLS` 由 Godot 编辑器模式构建注入）。
+
+踩坑表现：直接 `dotnet build` 后跑 `--script-generate`，因程序集里根本没有生成器，命令**静默空跑（零输出）**，Ge 不被改写、tscn 不变，易误判为"生成了但没变化"，甚至误去手工补字段。
+
+正确顺序：
+1. 先让 Godot 编辑器模式构建一次以注入 `TOOLS`：`godot --headless --editor --path GodotProject --quit`（可见 `[GameFramework] Plugin loaded.`）
+2. 再跑 `--script-generate`（见上命令），应看到 `[ScriptGenerate] 已生成并赋值脚本` + `场景已保存 (Ok)`
+3. 改动带 `m_` 前缀的新 UI 节点时，**必须**走一步（或 GUI 按钮）；生成器每次覆盖重写 Ge，若发现 Ge 与 tscn 绑定的节点有出入，先检查是否漏了编辑器模式构建，再检查 `m_` 前缀/子节点，而非手改 Ge。
+
 ## 7. 注意事项 / FAQ
+
+### 7.0 内容落地约束
+
+**UI 内容必须落地到 `.tscn` 预制体**（工作区红线，见 `CLAUDE.md`「内容创作红线」）：控件层级、布局、贴图引用在编辑器中搭好，代码只做挂载/绑定/驱动。允许的例外是本系统"基于模板的动态生成" —— `ScriptGenerateInspector` 生成的 `[Export]` 子节点自动收集，以及 `OpenUIForm` 从配表路径实例化已有 `.tscn`；这类复用/实例化仍需以落地预制体为前提，不在代码里 `new` 控件拼界面。
 
 **Q: 为什么我的按钮回调触发了两次？**
 `OnInit` 每次打开（含池中复用）都会调用，信号订阅必须包在 `if (isNewInstance)` 里。
@@ -498,4 +528,7 @@ Inspector 底部三个按钮：**Bind UI Script**（生成+挂载）、**Delete 
 
 **Q: 修改了 Ge 文件里的代码，下次生成没了？**
 Ge 文件头部注明"生成时会被覆盖，请勿手动修改"，业务代码一律写在 `.Logic.cs`。
+
+**Q: 纯布局/位置调整能用 headless 临时脚本程序化验证吗？**
+**不建议（踩坑：布局调整跑 headless 验证反而更慢）**。Godot C# 工程每次无头启动都要加载程序集与资源（十几秒级），还要写临时 GDScript 实例化场景、处理输出捕获，迭代"改坐标 → 验证 → 再改"的成本远高于编辑器。布局是可视的，节点是否重叠在编辑器里一眼可判，直接拖拽调整秒级完成。**结论：纯布局/视觉调整一律在编辑器里目视完成**，不要跑 headless 临时脚本；headless 只用于不可目视的确定性校验（编译、单测、资源加载报错）。
 

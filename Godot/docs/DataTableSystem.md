@@ -212,7 +212,7 @@ m_Config = ConfigSystem.Instance.Tables.TbCharacterConfig.DataList
 
 ## 5. 新增一张表的完整步骤
 
-1. **定义结构**：在 `Configs/GameConfig/Datas/__beans__.xlsx` 中定义 Bean 字段；如需枚举，在 `__enums__.xlsx` 中定义。
+1. **定义结构**：在 `Configs/GameConfig/Datas/__beans__.xlsx` 中定义 Bean 字段；如需枚举，在 `__enums_xxx__.xlsx` 中定义。**若枚举用作表索引（如 id）：显式写 value 且保证与数据一致；不同域的枚举分文件**（新增文件须在 `luban.conf` 的 `schemaFiles` 注册）。
 2. **注册表**：在 `__tables__.xlsx` 中登记表名（如 `TbItemConfig`）、模块、索引字段、数据源文件名。
 3. **填数据**：新建/编辑数据 Excel（如 `道具.xlsx`），表头注释即生成代码的 XML 注释。
 4. **生成**：双击 `Configs/GameConfig/gen_code_bin_to_project.bat`（命令行/CI 先 `set AI_MODE=1` 免暂停）。
@@ -227,6 +227,20 @@ m_Config = ConfigSystem.Instance.Tables.TbCharacterConfig.DataList
 
 ## 6. 注意事项 / FAQ
 
+**Q: 建字段时怎么预判"应该用枚举"？**
+很多字段一开始图省事用 `string`/`int`，等代码要用 `==`/`switch`/分组、或要表达组合时才意识到它是有限离散类别，被迫返工。建字段时先过这张速测表（命中任一就该用枚举）：
+
+| 字段特征 | 该用的类型 |
+|------|------|
+| 取值有限离散，且用作**逻辑分支**（`==`/`switch`/`Contains`/字典分组依据） | 枚举 |
+| 用作**归类/分组/键**，而非纯展示文本 | 枚举（`string` 只该做展示文案，归类键用枚举） |
+| 需表达"**同时多选/组合**"（如 独行+双人） | flags 位枚举 |
+| **跨表共享同一语义**（如食品标签被 food/ingredient/guestrace 共用） | 先查现有枚举域文件，能复则复；共享标签归主语义域 |
+| 作为 **id/主键** | 枚举 + 每个 item **显式 value**（勿依赖自增，否则第一位=0 与数据 id 错位） |
+| 需**别名/本地化** | 枚举 `alias` 天然支持；`string` 要另配映射 |
+
+3 句速测：① 会不会被 `==`/`switch`/`Contains` 当分类用？② 会不会跨表复用同一组取值？③ 要不要表达"同时多个"？任一"是"→ 现在定义成枚举；③ 再额外用 flags。收益：Luban **编译期**抓非法枚举值，`string`/`int` 要运行期才爆——早用枚举 = 早暴露引用错误、省返工。
+
 **Q: 修改 Excel 后运行时数据没变？**
 必须重新执行生成脚本——运行时读的是 `.bytes` 二进制，不是 Excel。生成后无需重启 Godot 编辑器，但需要 `dotnet build`（若结构变化产生了新代码）。
 
@@ -238,6 +252,19 @@ m_Config = ConfigSystem.Instance.Tables.TbCharacterConfig.DataList
 
 **Q: 能在运行时增删行吗？**
 不能。生成代码所有字段 `readonly`，容器只读暴露。运行时可变数据请使用 DataNode（见 `DataNodeSystem.md`）或 Setting。
+
+**Q: 用枚举做主键/索引有什么注意事项？**
+用枚举替代数字 id 能消灭魔数、让 Luban 在**编译期**就能抓住错误引用。注意三点：
+- **枚举 value 必须显式等于表数据**。Luban 默认 post-increment **从 0 开始**，而业务数据常从 1 起；依赖自增会使第一个枚举=0，与数据 id 错位（报 `X 不是 enum:'IdentityId' 的有效枚举值`）。用作表索引时必须给每个 item 显式写 value。
+- **生成的 `XxxConfig.Id` 变枚举后要与 int 交互需显式 `(int)` 转换**（如模型字段是 `int` / 与枚举比较时），集中在一个 service 层转换较好控制。
+- **枚举文件按域拆分、逐个注册**：不同域的枚举分文件（如 `__enums_item__`/`__enums_guest__`/`__enums_combat__`，共享枚举如 `FoodTag` 归主语义域"物品"）。新增枚举文件必须写入 `luban.conf` 的 `schemaFiles`（`type:enum`），Luban 不会自动发现 `__enums_*.xlsx`。
+
+手动建枚举 xlsx 容易踩的坑：row1 是表头、row2 是 items 子表头（含 `##var` 在 col1 + `name/alias/value/comment/tags` 自 col8 起，缺 `alias`/`tags` 会报 `缺失列:'alias'`）。**最稳做法：复制一份可用的枚举文件（如 `__enums_combat__`）当模板整文件重建**，再清数据区写入自己的枚举，避免列错位。
+
+**Q: 用脚本直接改数据 xlsx 时，坑在哪？**
+两点，都容易白跑一次：
+- **列坐标以 dump 为准，别靠 `##var` 顺序脑补**。数据行的 A 列常是空 tag 列，id 排在 B 列；其他字段列也可能与表头序号错位。动手前先用 `_inspect.py`（或 openpyxl 读表）把每行打出来，逐个确认"A 是 tag/id、某列才是要改的字段"再写。本次就曾因默认按 `column=1` 读 id 而 data 没改到。枚举字段列改类型后，数据行要按**位标记**填（如 flags 枚举填 `A|B`），字段顺序与配表定义一致才 `Deserialize` 不错位。
+- **改表脚本要可重跑（幂等）**。一次性脚本失败后再跑会重复追加/覆盖（如重复加枚举）。写成分号脚本：先探测已有项、按 key upsert，避免二次执行出错；也方便导表失败后直接 rerun 而不是另写 v2。
 
 **Q: `ExternalTypeUtil.cs` 是干什么的？**
 Luban 内建 `vector2/vector3` 等数学类型与 Godot `Vector2/Vector3` 之间的转换工具，每次生成时从 `Configs/GameConfig/CustomTemplate/` 覆盖拷贝到 `GameScripts/GameProto/`，勿手改。
