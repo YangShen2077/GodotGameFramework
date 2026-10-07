@@ -50,6 +50,76 @@ namespace GodotGameFramework.Editor
 			AddInspectorPlugin(m_ScriptGenerateInspector);
 			AddInspectorPlugin(m_NodePoolInspector);
 			AddInspectorPlugin(m_ArchiveSettingInspector);
+
+			// headless 命令行生成工具入口（等效 Generate Script 按钮）：
+			//   godot --headless --editor --path GodotProject -- --script-generate --scene=res://TheGame/UIs/XxxForm.tscn --node=XxxForm
+			TryRunGenerateFromCommandLine();
+		}
+
+		/// <summary>
+		/// 检测命令行参数 --script-generate：生成 Ge/Logic（复用 <see cref="ScriptGenerateCore"/>）、
+		/// 挂脚本绑定 m_ 子节点并保存场景，然后退出编辑器。headless 下 EditorScript 无法用 -s 运行，
+		/// 故走插件启动路径。
+		/// </summary>
+		private void TryRunGenerateFromCommandLine()
+		{
+			var args = new System.Collections.Generic.Dictionary<string, string>();
+			foreach (string a in OS.GetCmdlineUserArgs())
+			{
+				if (!a.StartsWith("--"))
+				{
+					continue;
+				}
+				var kv = a.Split("=", 2);
+				args[kv[0]] = kv.Length == 2 ? kv[1] : "";
+			}
+			if (!args.ContainsKey("--script-generate"))
+			{
+				return;
+			}
+
+			if (!args.TryGetValue("--scene", out string scenePath) || !args.TryGetValue("--node", out string nodePath))
+			{
+				GD.PushError("[ScriptGenerate] 用法: --script-generate --scene=res://xxx.tscn --node=NodePath");
+				GetTree().Quit(1);
+				return;
+			}
+
+			var packed = GD.Load<PackedScene>(scenePath);
+			if (packed == null)
+			{
+				GD.PushError($"[ScriptGenerate] 场景加载失败: {scenePath}");
+				GetTree().Quit(1);
+				return;
+			}
+
+			var root = packed.Instantiate();
+			// --node 支持 "." / 空 / 根节点名（目标即根自身），否则按相对根的子节点路径查找
+			var node = (nodePath == "" || nodePath == "." || nodePath == root.Name)
+				? root
+				: root.GetNodeOrNull<Node>(nodePath);
+			if (node == null)
+			{
+				GD.PushError($"[ScriptGenerate] 找不到节点: {nodePath}");
+				root.Free();
+				GetTree().Quit(1);
+				return;
+			}
+
+			string result = ScriptGenerateCore.Generate(node);
+			GD.Print(result);
+
+			// 生成成功后保存场景（headless 下无"当前打开场景"，重新 Pack + 落盘）
+			if (result.Contains("已生成并赋值脚本"))
+			{
+				var saved = new PackedScene();
+				saved.Pack(root);
+				Error err = ResourceSaver.Save(saved, scenePath);
+				GD.Print($"[ScriptGenerate] 场景已保存: {scenePath} ({err})");
+			}
+
+			root.Free();
+			GetTree().Quit(0);
 		}
 
 		public override void _ExitTree()
@@ -68,20 +138,7 @@ namespace GodotGameFramework.Editor
 			RemoveInspectorPlugin(m_ScriptGenerateInspector);
 			RemoveInspectorPlugin(m_NodePoolInspector);
 			RemoveInspectorPlugin(m_ArchiveSettingInspector);
-			m_ProcedureComponent.Free();
-			m_BaseComponent.Free();
-			m_SceneComponent.Free();
-			m_SettingComponent.Free();
-			m_EntityComponent.Free();
-			m_UIComponent.Free();
-			m_SoundComponent.Free();
-			m_LocalizationComponent.Free();
-			m_DownloadComponent.Free();
-			m_WebRequestComponent.Free();
-			m_ResourceComponent.Free();
-			m_ScriptGenerateInspector.Free();
-			m_NodePoolInspector.Free();
-			m_ArchiveSettingInspector.Free();
+			// 注意：InspectorPlugin 子类为 RefCounted，交由 Godot 自动释放，不调用 Free()
 		}
 	}
 }
