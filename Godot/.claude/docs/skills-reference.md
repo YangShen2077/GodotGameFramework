@@ -36,7 +36,7 @@
 
 | Command | Purpose |
 |---------|---------|
-| `/luban-dev` | Luban 配置全栈工具 — Excel 表/枚举/Bean CRUD（luban_helper.py）、导表生成代码与二进制、GGF 集成（ConfigSystem 懒加载）、Schema/校验器 |
+| `/luban-dev` | Luban 配置全栈工具 — Excel 表/枚举/Bean CRUD（luban_helper.py）、导表生成代码与二进制、GGF 集成（ConfigSystem 懒加载）、Schema/校验器；已并入官方 Luban.Agent CLI 能力（validate/schema、`--errorFormat json` 分层排错、Schema 设计原则、校验器速查） |
 | `/localize` | Localization workflow: string extraction, validation, translation readiness |
 
 ## 工程环境与元技能

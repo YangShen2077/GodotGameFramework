@@ -108,6 +108,63 @@ python scripts/luban_helper.py --data-dir ../Configs/GameConfig/Datas <command>
 
 ---
 
+## 官方 CLI 能力补充（排错 / Schema 设计）
+
+以下命令来自官方 Luban.Agent（需已构建 `Tools/Luban.Agent.dll`）。**日常导表仍走上方 GGF 脚本**，仅当排错、查结构、做 Schema 设计时按下述使用。
+
+### 分层排错（生成失败排查）
+
+1. 加 `--errorFormat json` 解析 `errors[]`
+2. 看 `category`：`schema` / `data` / `validation` / `codegen` / `cli`
+3. 有 `file` + `location` + `fieldPath` 先修对应单元格/字段
+4. 排查顺序：CLI(`-conf`/`-t`/`-c`/`-d`) → Schema(group/value_type/继承) → Data(类型/枚举/必填/分隔符) → Validation(ref/range/path) → Codegen(关键字/非法标识符)
+
+> 原则：修好数据或按程序意图改 schema；**禁止削弱校验来通过生成**（除非用户明确要求并说明风险）。
+
+```bash
+# 只校验（Agent CLI）
+dotnet Luban.Agent.dll validate --conf luban.conf -t all
+# 分层报错（主 CLI）
+dotnet Luban.dll --conf luban.conf -t all -f --strict --errorFormat json -x outputSaver=null
+# 导出 / 查询 schema
+dotnet Luban.Agent.dll schema --conf luban.conf -t all
+dotnet Luban.dll --conf luban.conf -t all -c schema-json -x outputCodeDir=./schema-out
+```
+
+### Schema 设计原则
+
+- **契约优先**：程序维护 Schema，策划填 Data。先登记表，再填数据
+- 复杂 GamePlay（技能/行为树）优先 OOP 继承/多态，不塞字符串；敏感字段用 `s` group 保护，勿泄漏到 `c`
+- 选型：扁平行表 → Excel + `read_schema_from_file`；多模块复用 bean → XML `Defines/*.xml` / `__beans__`；多态 → 抽象 bean + 子类，Excel 填类型名/别名；一对多嵌套 → `list,Bean`
+- 类型要点：容器 `list,T` / `map,K,V`（**元素不可 `list,int?`**）；可空 `T?`；引用 `int#ref=module.TbX`；字段名建议 snake_case
+- 检查清单：主键与 `mode`（map/list/one）匹配、group 覆盖两端、多态子类均定义且可区分、用 `-c schema-json` 或 MCP `GetSchema` 复核
+
+### 校验器速查（发布建议 `--strict`）
+
+| 能力 | 示例 |
+|:---|:---|
+| 非默认 | `int!`、`int?!` |
+| 引用 | `int#ref=item.TbItem`；可跳过 0 `int#ref=item.TbItem?` |
+| 范围 | `int#range=[1,100]` |
+| 路径 | `string#path=unity` + `-x pathValidator.rootDir=...` |
+| 集合大小 | `(list#size=4),int` |
+| 允许值 | `int#set=1;2;3` |
+| 正则 | `string#regex=^[a-z]+$` |
+
+容器约束加在容器上 `(list#size=n),T`；可空为 null 时多数引用校验会跳过。详见 [validators.md](references/validators.md)。
+
+### Excel 填表约定
+
+- A1 以 `##` 开头才能识别（否则整张 sheet 忽略）；`##var` 字段名 / `##type` 类型 / `##group` 分组(`c`/`s`/`e`) / `##` 注释行 / `#` 开头列=注释列不导出
+- 空字符串填 `""`；枚举可填名字或 alias；嵌套/多态按样表填，不 DIY 分隔符。详见 [excel-format.md](references/excel-format.md)
+
+### 运行时加载
+
+- 一个 `Tables` 聚合所有表（项目即 `ConfigSystem.Instance.Tables`，已符合），避免每表静态全局单例，便于热更/测试
+- `-c` 与 `-d` 格式匹配（项目：`cs-bin` + `bin`）；客户端不要加载仅 `s` group 的表/字段
+
+---
+
 ## 参考文档（按需加载）
 
 | 场景 | 文档 | 内容 |
