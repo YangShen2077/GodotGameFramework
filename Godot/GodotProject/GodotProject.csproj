@@ -1,6 +1,6 @@
-<Project Sdk="Godot.NET.Sdk/4.7.0">
+<Project Sdk="Godot.NET.Sdk/4.7.2">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <HotReloadEnabled>true</HotReloadEnabled>
     <RootNamespace>GodotProject</RootNamespace>
@@ -13,9 +13,20 @@
          可用更精细的符号控制级别：ENABLE_DEBUG_LOG / ENABLE_INFO_LOG / ENABLE_WARNING_LOG / ENABLE_ERROR_LOG / ENABLE_FATAL_LOG
          以及分级开关：ENABLE_DEBUG_AND_ABOVE_LOG / ENABLE_INFO_AND_ABOVE_LOG 等。
          Release 构建时可移除此行以消除所有日志调用的性能开销。 -->
-    <DefineConstants>ENABLE_LOG;ENABLE_INFO_AND_ABOVE_LOG</DefineConstants>
+    <DefineConstants>ENABLE_LOG;ENABLE_INFO_AND_ABOVE_LOG;GDUNIT4NET_API_V5</DefineConstants>
   </PropertyGroup>
    <ItemGroup>
      <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
    </ItemGroup>
+   <!-- gdUnit4 package dependencies --> 
+   <ItemGroup>
+     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.0"/>
+     <PackageReference Include="gdUnit4.api" Version="5.1.0-rc5"/>
+     <PackageReference Include="gdUnit4.test.adapter" Version="3.1.1"/>
+     <PackageReference Include="gdUnit4.analyzers" Version="1.0.0">
+       <PrivateAssets>none</PrivateAssets>
+       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+     </PackageReference>
+   </ItemGroup>
+
 </Project>

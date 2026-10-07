@@ -34,7 +34,7 @@ project/assembly_name="GodotProject"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/ComponentInsoector/plugin.cfg", "res://addons/ExportInspector/plugin.cfg", "res://addons/TopMenu/plugin.cfg", "res://addons/asset_bundle/plugin.cfg", "res://addons/ezpz_inspector/plugin.cfg")
+enabled=PackedStringArray("res://addons/ComponentInsoector/plugin.cfg", "res://addons/ExportInspector/plugin.cfg", "res://addons/TopMenu/plugin.cfg", "res://addons/asset_bundle/plugin.cfg", "res://addons/ezpz_inspector/plugin.cfg", "res://addons/gdUnit4/plugin.cfg")
 
 [file_customization]
 
@@ -44,6 +44,11 @@ folder_colors={
 "res://TheGame/GameScripts/GameProto/": "gray",
 "res://TheGame/MainPack/": "blue"
 }
+
+[gdunit4]
+
+settings/test/test_discovery=true
+settings/test/test_lookup_folder=""
 
 [input]
 
