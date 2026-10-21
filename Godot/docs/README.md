@@ -48,19 +48,6 @@
 
 > 每个玩法功能一篇，记录需求规则、红线、架构与踩坑，让 AI 改代码前快速理解。模板与维护约定见 [features/README.md](features/README.md)（功能完成即更新）。
 
-| 文档 | 内容 |
-|------|------|
-| [features/CombatSystem.md](features/CombatSystem.md) | 日间探索战斗（打木桩演示）：三预制体分离、场景切换链路、方案B 恢复标记、D4 临时代码数值 |
-| [features/DayCycleSystem.md](features/DayCycleSystem.md) | 日循环：早→中→晚→经营后 四阶段 FSM、手动推进、方案B 阶段恢复 |
-| [features/RestaurantSystem.md](features/RestaurantSystem.md) | 经营与客人（**总纲**）：玩法整体、端到端数据流、横切服务（HUD/手持）、配表总表、测试总览；子领域见下 |
-| [features/GuestSystem.md](features/GuestSystem.md) | 客人系统：客人生成/自动入座/生命周期/耐心/上菜/结账、营业节奏 |
-| [features/StaffSystem.md](features/StaffSystem.md) | 员工系统：员工安排/餐馆升级/员工 AI（厨师限量、服务员上菜点单） |
-| [features/CookingSystem.md](features/CookingSystem.md) | 后厨与做菜：多灶台并行、备菜/取菜、InventorySystem 衔接 |
-| [features/MenuOrderSystem.md](features/MenuOrderSystem.md) | 菜单与订单：正式菜单、点单选菜、订单队列（开放订单）、上菜核销 |
-| [features/SatisfactionSystem.md](features/SatisfactionSystem.md) | 顾客满意度：同行组共享最终满意度 / 当晚平均 S（按人数加权）、厨艺体验分、出品质量逐份归因（DishQuality）、控制台公式日志 |
-| [features/CrowdReportSystem.md](features/CrowdReportSystem.md) | 客流报告：今日概况 + 备料方向（优先/适量/特殊）、随机抽取六步流程、数据源注入 |
-| [features/InventorySystem.md](features/InventorySystem.md) | 背包/仓库/商店：网格容器、容器级堆叠策略、跨区转移/买卖/烹饪 |
-| [features/Common.md](features/Common.md) | 全局速度与暂停（Common）：Tab 循环 1x/2x/4x、打开配表 pauseScene 界面暂停场景、纯 C# GameSpeedService + 公共层 GameSpeedSystem |
 
 ## 项目设计经验（architecture/）
 
