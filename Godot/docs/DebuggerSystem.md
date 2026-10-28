@@ -18,6 +18,7 @@
 
 - ✅ **FPS 悬浮图标**：可拖拽；文本按控制台日志级别变色（有 Warning → 黄、有 Error/Fatal → 红）；点击展开全窗口
 - ✅ **全功能调试窗口**：标题栏拖拽、`0.5x ~ 4x` 缩放、多级页签（根页签末尾附 `Close` 收起）
+- ✅ **分辨率自适应**：缩放按视口与参考分辨率自动计算（1920×1080 基准 = 1.0x，3840×2160 基准 → 2.0x），窗口尺寸变化即时重算；Settings 里可切回手动倍率。缩放作用在**窗口尺寸 / 字号 / 内边距**等真实布局上（不用 `Control.Scale`），放大后文字不发虚
 - ✅ **Console**：双源日志捕获（框架日志 + Godot 引擎原生输出）、跨线程安全、五级过滤（Debug/Info/Warning/Error/Fatal 各带计数）、Lock Scroll、行选中查看堆栈、复制到剪贴板、行数上限裁剪
 - ✅ **Information** 页签组：System / Environment / Screen / Graphics / Input / Path / Scene / Time 八个信息窗口
 - ✅ **Profiler** 页签组：内存与对象概况（Godot 监控项 + .NET GC）、对象池逐池详情（含释放按钮）、引用池计数表（含严格检查开关）、资源/Web 请求/下载代理计数
@@ -161,10 +162,15 @@ Other/Operations
 |--------|------|
 | `Debugger.Icon.X/Y` | 图标位置（拖拽结束时保存） |
 | `Debugger.Window.X/Y` | 窗口位置（拖拽结束时保存） |
-| `Debugger.Window.Scale` | 窗口缩放（Settings 窗口修改时保存） |
+| `Debugger.Window.Scale` | 窗口缩放倍率（Settings 窗口修改时保存） |
+| `Debugger.Window.AutoScale` | 是否按视口自动计算缩放（默认 `true`；手动调倍率时写为 `false`） |
 | `Debugger.Console.LockScroll` / `DebugFilter` / `InfoFilter` / `WarningFilter` / `ErrorFilter` / `FatalFilter` | 控制台开关 |
 
 启动时 `OnEnter` 读取；`ResetLayout()` 恢复默认并立即保存。设置组件不可用时静默降级为默认值。
+
+**自适应缩放**：`AutoWindowScale` 默认开启，`OnEnter` 与 `Window.SizeChanged` 时用 `ResolveAutoWindowScale()`（`min(视口宽/1920, 视口高/1080)`，钳制 0.5~4）覆盖 `WindowScale`，随后把窗口位置钳制回视口内；Settings 里手动调倍率会把 `AutoScale` 置为 `false`，点 `Auto` 按钮可切回。
+
+`WindowScale` 的赋值会走 `ApplyUiMetrics()`：按倍率重建窗口/图标尺寸、`ScaledFontSize()` 换算的字号（基准 16 / 14，最小 8）、样式内边距与圆角，并清空页签签名与内容缓存强制重排；`Control.Scale` 恒为 1。
 
 ### 3.5 激活策略（DebuggerActiveWindowType）
 
@@ -174,6 +180,18 @@ Other/Operations
 | `OnlyOpenWhenDevelopment` | 仅调试构建（`OS.IsDebugBuild()`） |
 | `OnlyOpenInEditor` | 仅编辑器运行（`OS.HasFeature("editor")`） |
 | `AlwaysClose` | 总是关闭（仍可运行时 `GF.Debugger.ActiveWindow = true` 打开） |
+
+### 3.6 字体与主题（中文标题为什么不加粗）
+
+调试器 UI 全部在代码里创建，**不挂项目主题**（`MainThemes.tres` 只给 `LoadingForm` / `QuestionTips`），因此默认用引擎内置主题。内置主题的 `RichTextLabel.bold_font` 是 `FontVariation(embolden = 1.2, base = 内置 Open Sans)`：英文 `[b]` 真加粗，但**中文没有字形只能走系统字体回退，回退字体拿不到 embolden → 中文标题实际是常规字重**，与正文同字重同字号，只剩颜色区分。
+
+`CreateUiTheme()` 自建主题解决该问题：
+
+- `SystemFont`（`Microsoft YaHei` → `PingFang SC` → `Noto Sans CJK SC` → `sans-serif`）作为 `Label` / `Button` 与 `RichTextLabel` 的 `normal_font`，中英统一到同一字体族；
+- `bold_font` 用同族 `FontWeight = 700` 的**真实粗体**；
+- 主题挂在 `DebuggerWindow` / `DebuggerIcon` 两个根面板上，子控件自动继承。
+
+标题本身还做了强化（`DebuggerDraw.Title`）：`[font_size=TitleFontSize]`（由 `ApplyUiMetrics()` 设为正文 +1 号，基准 16 vs 14）+ 更饱和的琥珀色 `#FFC53D` + 黑色 `[outline_size=2]` 描边，不再依赖"浅黄色"这唯一区分手段。
 
 ---
 
@@ -191,7 +209,9 @@ Other/Operations
 ```csharp
 GF.Debugger.ActiveWindow = true;                  // 激活/关闭整个调试器
 GF.Debugger.ShowFullWindow = true;                // 展开/收起全窗口
-GF.Debugger.WindowScale = 1.5f;                   // 缩放（0.5 ~ 4）
+GF.Debugger.WindowScale = 1.5f;                   // 缩放（0.5 ~ 4，按倍率重建尺寸与字号）
+GF.Debugger.AutoWindowScale = true;               // 打开自动缩放（按视口重算，4K 基准 → 2.0）
+float autoScale = GF.Debugger.ResolveAutoWindowScale(); // 直接取自动缩放值（不改状态）
 GF.Debugger.SelectDebuggerWindow("Profiler/Reference Pool");  // 代码选中页签
 GF.Debugger.ResetLayout();                        // 重置布局并保存
 float fps = GF.Debugger.CurrentFps;               // 当前帧率（FpsCounter）
@@ -249,7 +269,7 @@ BBCode 内容必须经 `DebuggerDraw.Esc` 转义；自定义窗口用 `Label/Dra
 
 ## 6. 已知边界
 
-- 窗口尺寸固定 `760×520`（仅整体缩放，无拖拽改尺寸/最大化）
+- 窗口基准尺寸固定 `760×520`：以 1920×1080 为 1.0x 基准按视口自动放大（4K 基准 → 2.0x）。缩放通过 **`ApplyUiMetrics()` 重建真实布局**（窗口尺寸 / 图标 96×36 / 字号 16·14 / 边距 6 / 圆角 4 全部乘倍率），不是 `Control.Scale`，因此文字按目标字号光栅化、不发虚；但**仍不支持拖拽改尺寸 / 最大化**
 - 内容区为纯文本渲染：表格列宽由 RichTextLabel 自动分配，无法逐列精确控宽
 - 未适配触摸多点操作（拖拽/点击按鼠标事件处理，触屏单点可用）
 - Godot 引擎侧错误/警告/脚本错误已通过文件尾部轮询捕获（`PollGodotLog`），但解析依赖行前缀模式（`ERROR:` / `WARNING:` / `E ` 等），非标准格式的引擎输出可能被漏掉或误判为 Debug 级别

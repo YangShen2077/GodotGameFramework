@@ -17,7 +17,10 @@ public sealed class DebuggerDraw
     private const string ToggleOnColor = "#7EFF9E";
     private const string ToggleOffColor = "#9AA5B1";
     private const string ItemNameColor = "#8FBCE6";
-    private const string TitleColor = "#FFD37E";
+
+    // 标题色：比旧值 #FFD37E（低饱和浅黄）更饱和的琥珀色，深底上更醒目
+    private const string TitleColor = "#FFC53D";
+    private const string TitleOutlineColor = "#000000C0";
     private const string SeparatorColor = "#3A4A5A";
 
     private readonly StringBuilder m_Text = new StringBuilder(4096);
@@ -28,6 +31,11 @@ public sealed class DebuggerDraw
     /// 是否请求内容区自动滚动到底部（锁定滚动，控制台用）。
     /// </summary>
     public bool ScrollFollowing { get; set; }
+
+    /// <summary>
+    /// 标题字号（由 DebuggerComponent 按缩放倍率设置，比正文大一号）。
+    /// </summary>
+    public int TitleFontSize { get; set; } = 16;
 
     /// <summary>
     /// 清空本帧绘制内容与交互回调。由 DebuggerComponent 每帧绘制前调用。
@@ -66,10 +74,15 @@ public sealed class DebuggerDraw
 
     /// <summary>
     /// 绘制小节标题。
+    /// 比正文大一号 + 琥珀色 + 黑色描边，避免在深底上"只有颜色区分"而看不清。
     /// </summary>
     public void Title(string text)
     {
-        m_Text.Append("[b][color=").Append(TitleColor).Append(']').Append(Esc(text)).Append("[/color][/b]\n");
+        m_Text.Append("[font_size=").Append(TitleFontSize)
+            .Append("][b][color=").Append(TitleColor)
+            .Append("][outline_size=2][outline_color=").Append(TitleOutlineColor).Append(']')
+            .Append(Esc(text))
+            .Append("[/outline_color][/outline_size][/color][/b][/font_size]\n");
     }
 
     /// <summary>

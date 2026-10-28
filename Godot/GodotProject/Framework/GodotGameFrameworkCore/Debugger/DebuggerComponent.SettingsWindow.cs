@@ -15,7 +15,8 @@ public sealed partial class DebuggerComponent
             Draw.BeginTable();
             Draw.DrawItem("Icon Position", Component.IconPosition.ToString());
             Draw.DrawItem("Window Position", Component.WindowPosition.ToString());
-            Draw.DrawItem("Window Scale", Component.WindowScale.ToString("F2"));
+            Draw.DrawItem("Window Scale", $"{Component.WindowScale:F2}{(Component.AutoWindowScale ? " (auto)" : string.Empty)}");
+            Draw.DrawItem("Auto Scale Base", Component.ResolveAutoWindowScale().ToString("F2"));
             Draw.EndTable();
             Draw.Space();
 
@@ -26,6 +27,7 @@ public sealed partial class DebuggerComponent
             Draw.Button("1.0x", () => SetScale(1f));
             Draw.Button("1.5x", () => SetScale(1.5f));
             Draw.Button("2.0x", () => SetScale(2f));
+            Draw.Button("Auto", () => Component.AutoWindowScale = true);
             Draw.NewLine();
             Draw.Space();
 
@@ -42,6 +44,8 @@ public sealed partial class DebuggerComponent
 
         private void SetScale(float scale)
         {
+            // 手动调倍率即退出自动缩放，避免下次窗口尺寸变化时被覆盖
+            Component.AutoWindowScale = false;
             Component.WindowScale = scale;
             Component.SaveLayoutSettings();
         }

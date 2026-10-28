@@ -58,11 +58,40 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
     /// </summary>
     internal const float DefaultWindowScale = 1f;
 
+    /// <summary>
+    /// 默认图标尺寸（随缩放倍率等比放大）。
+    /// </summary>
+    internal static readonly Vector2 DefaultIconSize = new Vector2(96f, 36f);
+
+    /// <summary>
+    /// 基准正文字号（随缩放倍率等比放大）。
+    /// </summary>
+    private const float BaseFontSize = 14f;
+
+    /// <summary>
+    /// 基准标题 / 图标字号（随缩放倍率等比放大）。
+    /// </summary>
+    private const float BaseTitleFontSize = 16f;
+
+    // ---- 主题色（样式随缩放重建时复用）----
+    private static readonly Color IconPanelBackground = new Color(0.05f, 0.07f, 0.1f, 0.85f);
+    private static readonly Color IconPanelBorder = new Color(0.3f, 0.5f, 0.7f, 0.9f);
+    private static readonly Color WindowPanelBackground = new Color(0.04f, 0.05f, 0.08f, 0.94f);
+    private static readonly Color WindowPanelBorder = new Color(0.35f, 0.55f, 0.75f, 1f);
+    private static readonly Color TitleBarBackground = new Color(0.09f, 0.13f, 0.2f, 1f);
+    private static readonly Color TitleBarBorder = new Color(0f, 0f, 0f, 0f);
+
     private const string SettingIconX = "Debugger.Icon.X";
     private const string SettingIconY = "Debugger.Icon.Y";
     private const string SettingWindowX = "Debugger.Window.X";
     private const string SettingWindowY = "Debugger.Window.Y";
     private const string SettingWindowScale = "Debugger.Window.Scale";
+    private const string SettingWindowAutoScale = "Debugger.Window.AutoScale";
+
+    /// <summary>
+    /// 调试器 UI 的参考分辨率（自适应缩放基准：对应 760×520 窗口 / 14 号字）。
+    /// </summary>
+    private static readonly Vector2 ReferenceResolution = new Vector2(1920f, 1080f);
 
     /// <summary>
     /// 调试器激活窗口类型。
@@ -78,6 +107,7 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
 
     private IDebuggerManager m_DebuggerManager;
     private readonly DebuggerDraw m_Draw = new DebuggerDraw();
+    private Theme m_UiTheme;
     private FpsCounter m_FpsCounter;
     private ConsoleWindow m_ConsoleWindow;
 
@@ -86,6 +116,10 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
     private PanelContainer m_IconPanel;
     private Label m_IconLabel;
     private PanelContainer m_WindowPanel;
+    private VBoxContainer m_WindowRoot;
+    private PanelContainer m_TitleBar;
+    private Label m_TitleLabel;
+    private Button m_TitleCloseButton;
     private VBoxContainer m_ToolbarRoot;
     private RichTextLabel m_ContentLabel;
 
@@ -94,6 +128,11 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
     private string m_LastContentText;
     private readonly StringBuilder m_ToolbarSignatureBuilder = new StringBuilder(128);
     private float m_WindowScale = DefaultWindowScale;
+
+    /// <summary>
+    /// 是否按视口自动计算窗口缩放（开启时忽略手动倍率）。
+    /// </summary>
+    private bool m_AutoWindowScale = true;
 
     // ---- 拖拽状态 ----
     private Control m_DragTarget;
@@ -165,6 +204,7 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
 
     /// <summary>
     /// 获取或设置调试器窗口缩放。
+    /// 缩放直接作用在窗口尺寸 / 字号 / 内边距等实际布局上（不使用 Control.Scale），保证文字按真实字号光栅化不发虚。
     /// </summary>
     public float WindowScale
     {
@@ -172,16 +212,47 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
         set
         {
             m_WindowScale = Mathf.Clamp(value, 0.5f, 4f);
-            if (m_WindowPanel != null)
+            ApplyUiMetrics();
+        }
+    }
+
+    /// <summary>
+    /// 获取或设置是否按当前视口自动计算窗口缩放（开启时 <see cref="WindowScale"/> 由 <see cref="ResolveAutoWindowScale"/> 决定）。
+    /// </summary>
+    public bool AutoWindowScale
+    {
+        get => m_AutoWindowScale;
+        set
+        {
+            if (m_AutoWindowScale == value)
             {
-                m_WindowPanel.Scale = Vector2.One * m_WindowScale;
+                return;
             }
 
-            if (m_IconPanel != null)
+            m_AutoWindowScale = value;
+            if (value)
             {
-                m_IconPanel.Scale = Vector2.One * m_WindowScale;
+                ApplyAutoWindowScale();
             }
+
+            SaveLayoutSettings();
         }
+    }
+
+    /// <summary>
+    /// 按视口尺寸与参考分辨率（1920×1080）计算自适应缩放值。
+    /// 基准分辨率 3840×2160 下返回 2.0，使窗口/字号保持与 1080p 基准一致的屏占比。
+    /// </summary>
+    public float ResolveAutoWindowScale()
+    {
+        Vector2 viewportSize = GetViewport()?.GetVisibleRect().Size ?? ReferenceResolution;
+        if (viewportSize.X <= 0f || viewportSize.Y <= 0f)
+        {
+            return DefaultWindowScale;
+        }
+
+        float scale = Mathf.Min(viewportSize.X / ReferenceResolution.X, viewportSize.Y / ReferenceResolution.Y);
+        return Mathf.Clamp(scale, 0.5f, 4f);
     }
 
     /// <summary>
@@ -239,6 +310,13 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
         RegisterDefaultDebuggerWindows();
         LoadLayoutSettings();
 
+        // 视口 / 窗口尺寸变化时（换分辨率、拖窗口、切显示器）重新计算自适应缩放
+        Window window = GetWindow();
+        if (window != null)
+        {
+            window.SizeChanged += OnWindowSizeChanged;
+        }
+
         ActiveWindow = _ActiveWindowType switch
         {
             DebuggerActiveWindowType.AlwaysOpen => true,
@@ -273,6 +351,17 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
         else
         {
             RefreshIcon();
+        }
+    }
+
+    public override void OnExitTree()
+    {
+        base.OnExitTree();
+
+        Window window = GetWindow();
+        if (window != null)
+        {
+            window.SizeChanged -= OnWindowSizeChanged;
         }
     }
 
@@ -338,7 +427,8 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
     {
         IconPosition = DefaultIconPosition;
         WindowPosition = DefaultWindowPosition;
-        WindowScale = DefaultWindowScale;
+        m_AutoWindowScale = true;
+        ApplyAutoWindowScale();
         SaveLayoutSettings();
     }
 
@@ -358,7 +448,20 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
             WindowPosition = new Vector2(
                 setting.GetFloat(SettingWindowX, DefaultWindowPosition.X),
                 setting.GetFloat(SettingWindowY, DefaultWindowPosition.Y));
+
+            // 默认开启自动缩放：旧存档只有 Scale 键、没有 AutoScale 键时也按自动处理，
+            // 否则历史拖动窗口保存的倍率会让自适应永远不生效；手动调倍率会写入 AutoScale=false。
+            m_AutoWindowScale = setting.GetBool(SettingWindowAutoScale, true);
+
             WindowScale = setting.GetFloat(SettingWindowScale, DefaultWindowScale);
+            if (m_AutoWindowScale)
+            {
+                ApplyAutoWindowScale();
+            }
+            else
+            {
+                ClampWindowPosition();
+            }
         }
         catch (Exception exception)
         {
@@ -384,12 +487,81 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
             setting.SetFloat(SettingWindowX, WindowPosition.X);
             setting.SetFloat(SettingWindowY, WindowPosition.Y);
             setting.SetFloat(SettingWindowScale, m_WindowScale);
+            setting.SetBool(SettingWindowAutoScale, m_AutoWindowScale);
             setting.Save();
         }
         catch (Exception exception)
         {
             Log.Warning("Save debugger layout settings failure: {0}", exception.Message);
         }
+    }
+
+    /// <summary>
+    /// 按当前视口重新计算并应用自适应缩放。
+    /// </summary>
+    private void ApplyAutoWindowScale()
+    {
+        WindowScale = ResolveAutoWindowScale();
+        ClampWindowPosition();
+    }
+
+    /// <summary>
+    /// 把窗口位置钳制在视口内（缩放变大后避免窗口跑到屏幕外）。
+    /// </summary>
+    private void ClampWindowPosition()
+    {
+        if (m_WindowPanel == null)
+        {
+            return;
+        }
+
+        Vector2 viewportSize = GetViewport()?.GetVisibleRect().Size ?? Vector2.Zero;
+        if (viewportSize.X <= 0f || viewportSize.Y <= 0f)
+        {
+            return;
+        }
+
+        Vector2 panelSize = m_WindowPanel.Size.Max(m_WindowPanel.CustomMinimumSize);
+        Vector2 position = m_WindowPanel.Position;
+        position.X = Mathf.Clamp(position.X, 0f, Mathf.Max(0f, viewportSize.X - panelSize.X));
+        position.Y = Mathf.Clamp(position.Y, 0f, Mathf.Max(0f, viewportSize.Y - panelSize.Y));
+        m_WindowPanel.Position = position;
+    }
+
+    /// <summary>
+    /// 把 FPS 图标位置钳制在视口内（缩放变化后避免图标跑到屏幕外）。
+    /// </summary>
+    private void ClampIconPosition()
+    {
+        if (m_IconPanel == null)
+        {
+            return;
+        }
+
+        Vector2 viewportSize = GetViewport()?.GetVisibleRect().Size ?? Vector2.Zero;
+        if (viewportSize.X <= 0f || viewportSize.Y <= 0f)
+        {
+            return;
+        }
+
+        Vector2 iconSize = m_IconPanel.Size.Max(m_IconPanel.CustomMinimumSize);
+        Vector2 position = m_IconPanel.Position;
+        position.X = Mathf.Clamp(position.X, 0f, Mathf.Max(0f, viewportSize.X - iconSize.X));
+        position.Y = Mathf.Clamp(position.Y, 0f, Mathf.Max(0f, viewportSize.Y - iconSize.Y));
+        m_IconPanel.Position = position;
+    }
+
+    /// <summary>
+    /// 窗口 / 视口尺寸变化回调。
+    /// </summary>
+    private void OnWindowSizeChanged()
+    {
+        if (!m_AutoWindowScale)
+        {
+            return;
+        }
+
+        ApplyAutoWindowScale();
     }
 
     #endregion
@@ -435,9 +607,59 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
         };
         AddChild(m_CanvasLayer);
 
+        m_UiTheme = CreateUiTheme();
         BuildIcon();
         BuildWindow();
+        ApplyUiMetrics();
         RefreshVisibility();
+    }
+
+    /// <summary>
+    /// 构建调试器专用主题：用 SystemFont 选一套支持 CJK 的系统字体（中英统一到同一族），
+    /// 粗体用 weight 700 的真实字重 —— 内置默认主题的 bold 是 Open Sans 的 embolden 变体，
+    /// 中文只能走系统字体回退、拿不到粗体，标题会和正文一样"虚"。
+    /// </summary>
+    private static Theme CreateUiTheme()
+    {
+        Font regular = CreateCjkFont(400);
+        Font bold = CreateCjkFont(700);
+
+        var theme = new Theme
+        {
+            DefaultFont = regular,
+            DefaultFontSize = (int)BaseFontSize,
+        };
+
+        theme.SetFont("font", "Label", regular);
+        theme.SetFont("font", "Button", regular);
+        theme.SetFont("normal_font", "RichTextLabel", regular);
+        theme.SetFont("bold_font", "RichTextLabel", bold);
+        theme.SetFont("mono_font", "RichTextLabel", regular);
+
+        theme.SetFontSize("normal_font_size", "RichTextLabel", (int)BaseFontSize);
+        theme.SetFontSize("bold_font_size", "RichTextLabel", (int)BaseFontSize);
+        theme.SetFontSize("mono_font_size", "RichTextLabel", (int)BaseFontSize);
+        return theme;
+    }
+
+    /// <summary>
+    /// 创建支持中日韩的系统字体（按优先级回退到各平台常见中文字体）。
+    /// </summary>
+    private static SystemFont CreateCjkFont(int weight)
+    {
+        return new SystemFont
+        {
+            FontNames = new[]
+            {
+                "Microsoft YaHei",      // Windows
+                "PingFang SC",          // macOS
+                "Noto Sans CJK SC",     // Linux / Android
+                "Source Han Sans SC",
+                "WenQuanYi Micro Hei",
+                "sans-serif",           // 兜底别名
+            },
+            FontWeight = weight,
+        };
     }
 
     private void BuildIcon()
@@ -446,15 +668,17 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
         {
             Name = "DebuggerIcon",
             Position = DefaultIconPosition,
+            CustomMinimumSize = DefaultIconSize,
+            Theme = m_UiTheme,
         };
-        m_IconPanel.AddThemeStyleboxOverride("panel", MakeStyle(new Color(0.05f, 0.07f, 0.1f, 0.85f), new Color(0.3f, 0.5f, 0.7f, 0.9f)));
+        m_IconPanel.AddThemeStyleboxOverride("panel", MakeStyle(IconPanelBackground, IconPanelBorder));
 
         m_IconLabel = new Label
         {
             Text = "FPS: --",
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            CustomMinimumSize = new Vector2(96f, 36f),
+            CustomMinimumSize = DefaultIconSize,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         m_IconPanel.AddChild(m_IconLabel);
@@ -469,25 +693,26 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
             Name = "DebuggerWindow",
             Position = DefaultWindowPosition,
             CustomMinimumSize = DefaultWindowSize,
+            Theme = m_UiTheme,
         };
-        m_WindowPanel.AddThemeStyleboxOverride("panel", MakeStyle(new Color(0.04f, 0.05f, 0.08f, 0.94f), new Color(0.35f, 0.55f, 0.75f, 1f)));
+        m_WindowPanel.AddThemeStyleboxOverride("panel", MakeStyle(WindowPanelBackground, WindowPanelBorder));
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 4);
-        m_WindowPanel.AddChild(vbox);
+        m_WindowRoot = new VBoxContainer();
+        m_WindowRoot.AddThemeConstantOverride("separation", 4);
+        m_WindowPanel.AddChild(m_WindowRoot);
 
         // ---- 标题栏（拖拽区）----
-        var titleBar = new PanelContainer
+        m_TitleBar = new PanelContainer
         {
             MouseFilter = Control.MouseFilterEnum.Stop,
         };
-        titleBar.AddThemeStyleboxOverride("panel", MakeStyle(new Color(0.09f, 0.13f, 0.2f, 1f), new Color(0f, 0f, 0f, 0f)));
-        titleBar.GuiInput += @event => OnDragInput(@event, m_WindowPanel, false);
+        m_TitleBar.AddThemeStyleboxOverride("panel", MakeStyle(TitleBarBackground, TitleBarBorder));
+        m_TitleBar.GuiInput += @event => OnDragInput(@event, m_WindowPanel, false);
 
         var titleRow = new HBoxContainer();
-        titleBar.AddChild(titleRow);
+        m_TitleBar.AddChild(titleRow);
 
-        var titleLabel = new Label
+        m_TitleLabel = new Label
         {
             Text = "GODOT GAME FRAMEWORK DEBUGGER",
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
@@ -495,23 +720,23 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        titleLabel.AddThemeColorOverride("font_color", new Color(0.85f, 0.92f, 1f));
-        titleRow.AddChild(titleLabel);
+        m_TitleLabel.AddThemeColorOverride("font_color", new Color(0.85f, 0.92f, 1f));
+        titleRow.AddChild(m_TitleLabel);
 
-        var closeButton = new Button
+        m_TitleCloseButton = new Button
         {
             Text = "  ×  ",
             FocusMode = Control.FocusModeEnum.None,
             Flat = true,
         };
-        closeButton.Pressed += () => ShowFullWindow = false;
-        titleRow.AddChild(closeButton);
-        vbox.AddChild(titleBar);
+        m_TitleCloseButton.Pressed += () => ShowFullWindow = false;
+        titleRow.AddChild(m_TitleCloseButton);
+        m_WindowRoot.AddChild(m_TitleBar);
 
         // ---- 页签区 ----
         m_ToolbarRoot = new VBoxContainer();
         m_ToolbarRoot.AddThemeConstantOverride("separation", 2);
-        vbox.AddChild(m_ToolbarRoot);
+        m_WindowRoot.AddChild(m_ToolbarRoot);
 
         // ---- 内容区 ----
         m_ContentLabel = new RichTextLabel
@@ -524,29 +749,114 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
-        m_ContentLabel.AddThemeFontSizeOverride("normal_font_size", 14);
-        m_ContentLabel.AddThemeFontSizeOverride("bold_font_size", 14);
-        m_ContentLabel.AddThemeFontSizeOverride("mono_font_size", 14);
+        m_ContentLabel.AddThemeFontSizeOverride("normal_font_size", (int)BaseFontSize);
+        m_ContentLabel.AddThemeFontSizeOverride("bold_font_size", (int)BaseFontSize);
+        m_ContentLabel.AddThemeFontSizeOverride("mono_font_size", (int)BaseFontSize);
         m_ContentLabel.MetaClicked += OnMetaClicked;
-        vbox.AddChild(m_ContentLabel);
+        m_WindowRoot.AddChild(m_ContentLabel);
 
         m_CanvasLayer.AddChild(m_WindowPanel);
     }
 
-    private static StyleBoxFlat MakeStyle(Color background, Color border)
+    private StyleBoxFlat MakeStyle(Color background, Color border)
     {
+        int radius = Mathf.Max(1, Mathf.RoundToInt(4f * m_WindowScale));
         var style = new StyleBoxFlat
         {
             BgColor = background,
             BorderColor = border,
-            CornerRadiusTopLeft = 4,
-            CornerRadiusTopRight = 4,
-            CornerRadiusBottomLeft = 4,
-            CornerRadiusBottomRight = 4,
+            CornerRadiusTopLeft = radius,
+            CornerRadiusTopRight = radius,
+            CornerRadiusBottomLeft = radius,
+            CornerRadiusBottomRight = radius,
         };
-        style.SetBorderWidthAll(1);
-        style.SetContentMarginAll(6f);
+        style.SetBorderWidthAll(Mathf.Max(1, Mathf.RoundToInt(m_WindowScale)));
+        style.SetContentMarginAll(Mathf.Round(6f * m_WindowScale));
         return style;
+    }
+
+    /// <summary>
+    /// 按 <see cref="WindowScale"/> 重建窗口 / 图标 / 字号 / 内边距等实际尺寸。
+    /// 走真实布局而不是 Control.Scale，文字按目标字号光栅化，放大后不发虚。
+    /// </summary>
+    private void ApplyUiMetrics()
+    {
+        int fontSize = ScaledFontSize(BaseFontSize);
+        int titleFontSize = ScaledFontSize(BaseTitleFontSize);
+        float separation = Mathf.Max(1f, 4f * m_WindowScale);
+        Vector2 iconSize = DefaultIconSize * m_WindowScale;
+        Vector2 windowSize = DefaultWindowSize * m_WindowScale;
+
+        if (m_IconPanel != null)
+        {
+            m_IconPanel.Scale = Vector2.One;
+            m_IconPanel.CustomMinimumSize = iconSize;
+            m_IconPanel.Size = iconSize;
+            m_IconPanel.AddThemeStyleboxOverride("panel", MakeStyle(IconPanelBackground, IconPanelBorder));
+        }
+
+        if (m_IconLabel != null)
+        {
+            m_IconLabel.CustomMinimumSize = iconSize;
+            m_IconLabel.AddThemeFontSizeOverride("font_size", fontSize);
+        }
+
+        if (m_WindowPanel != null)
+        {
+            m_WindowPanel.Scale = Vector2.One;
+            m_WindowPanel.CustomMinimumSize = windowSize;
+            m_WindowPanel.AddThemeStyleboxOverride("panel", MakeStyle(WindowPanelBackground, WindowPanelBorder));
+        }
+
+        if (m_WindowRoot != null)
+        {
+            m_WindowRoot.AddThemeConstantOverride("separation", Mathf.RoundToInt(separation));
+        }
+
+        if (m_TitleBar != null)
+        {
+            m_TitleBar.AddThemeStyleboxOverride("panel", MakeStyle(TitleBarBackground, TitleBarBorder));
+        }
+
+        if (m_TitleLabel != null)
+        {
+            m_TitleLabel.AddThemeFontSizeOverride("font_size", titleFontSize);
+        }
+
+        if (m_TitleCloseButton != null)
+        {
+            m_TitleCloseButton.AddThemeFontSizeOverride("font_size", titleFontSize);
+        }
+
+        if (m_ToolbarRoot != null)
+        {
+            m_ToolbarRoot.AddThemeConstantOverride("separation", Mathf.Max(1, Mathf.RoundToInt(separation / 2f)));
+        }
+
+        if (m_ContentLabel != null)
+        {
+            m_ContentLabel.AddThemeFontSizeOverride("normal_font_size", fontSize);
+            m_ContentLabel.AddThemeFontSizeOverride("bold_font_size", fontSize);
+            m_ContentLabel.AddThemeFontSizeOverride("mono_font_size", fontSize);
+        }
+
+        // 小节标题比正文大一号（配合描边 + 琥珀色，不再只靠颜色区分）
+        m_Draw.TitleFontSize = titleFontSize;
+
+        // 字号/尺寸变化后强制重建页签与内容
+        m_ToolbarSignature = null;
+        m_LastContentText = null;
+
+        ClampWindowPosition();
+        ClampIconPosition();
+    }
+
+    /// <summary>
+    /// 按缩放倍率换算字号（最小 8，避免过小不可读）。
+    /// </summary>
+    private int ScaledFontSize(float baseSize)
+    {
+        return Mathf.Max(8, Mathf.RoundToInt(baseSize * m_WindowScale));
     }
 
     #endregion
@@ -614,7 +924,7 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
         while (group != null)
         {
             var row = new HBoxContainer();
-            row.AddThemeConstantOverride("separation", 4);
+            row.AddThemeConstantOverride("separation", Mathf.Max(1, Mathf.RoundToInt(4f * m_WindowScale)));
 
             string[] names = group.GetDebuggerWindowNames() ?? Array.Empty<string>();
             for (int i = 0; i < names.Length; i++)
@@ -626,7 +936,7 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
                     ButtonPressed = i == group.SelectedIndex,
                     FocusMode = Control.FocusModeEnum.None,
                 };
-                button.AddThemeFontSizeOverride("font_size", 14);
+                button.AddThemeFontSizeOverride("font_size", ScaledFontSize(BaseFontSize));
 
                 IDebuggerWindowGroup capturedGroup = group;
                 int capturedIndex = i;
@@ -645,7 +955,7 @@ public sealed partial class DebuggerComponent : GameFrameworkComponent
                     FocusMode = Control.FocusModeEnum.None,
                     Modulate = new Color(1f, 0.65f, 0.65f),
                 };
-                closeButton.AddThemeFontSizeOverride("font_size", 14);
+                closeButton.AddThemeFontSizeOverride("font_size", ScaledFontSize(BaseFontSize));
                 closeButton.Pressed += () => ShowFullWindow = false;
                 row.AddChild(closeButton);
                 isRoot = false;
