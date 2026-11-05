@@ -215,6 +215,7 @@ m_Config = ConfigSystem.Instance.Tables.TbCharacterConfig.DataList
 1. **定义结构**：在 `Configs/GameConfig/Datas/__beans__.xlsx` 中定义 Bean 字段；如需枚举，在 `__enums_xxx__.xlsx` 中定义。**若枚举用作表索引（如 id）：显式写 value 且保证与数据一致；不同域的枚举分文件**（新增文件须在 `luban.conf` 的 `schemaFiles` 注册）。
 2. **注册表**：在 `__tables__.xlsx` 中登记表名（如 `TbItemConfig`）、模块、索引字段、数据源文件名。
 3. **填数据**：新建/编辑数据 Excel（如 `道具.xlsx`），表头注释即生成代码的 XML 注释。
+   **全局只有一份的配置（单值表）建议用纵表**，一行一个字段，比横着排十几列好读得多，见 §6「单值表 / 纵表」。
 4. **生成**：双击 `Configs/GameConfig/gen_code_bin_to_project.bat`（命令行/CI 先 `set AI_MODE=1` 免暂停）。
    - C# 代码落至 `TheGame/GameScripts/GameProto/GameConfig/`
    - `.bytes` 数据落至 `TheGame/DataTables/GameConfigs/`
@@ -266,6 +267,25 @@ m_Config = ConfigSystem.Instance.Tables.TbCharacterConfig.DataList
 - **列坐标以 dump 为准，别靠 `##var` 顺序脑补**。数据行的 A 列常是空 tag 列，id 排在 B 列；其他字段列也可能与表头序号错位。动手前先用 `_inspect.py`（或 openpyxl 读表）把每行打出来，逐个确认"A 是 tag/id、某列才是要改的字段"再写。本次就曾因默认按 `column=1` 读 id 而 data 没改到。枚举字段列改类型后，数据行要按**位标记**填（如 flags 枚举填 `A|B`），字段顺序与配表定义一致才 `Deserialize` 不错位。
 - **改表脚本要可重跑（幂等）**。一次性脚本失败后再跑会重复追加/覆盖（如重复加枚举）。写成分号脚本：先探测已有项、按 key upsert，避免二次执行出错；也方便导表失败后直接 rerun 而不是另写 v2。
 
+**Q: 全局只有一份的配置（单值表）怎么填？纵表怎么写？**
+
+横表一行十几列不好读，Luban 支持**纵表**（一行一个字段）。格式必须是这样：
+
+```
+| ##column | ##type | ##        |     |
+| id       | int    | 这是id     | 1   |
+| maxVision| float  | 视野上限   | 100 |
+| baseSize | Battle.VisionSize | 基地固定视野等级 | 小 |
+```
+
+要点（每条都踩过）：
+
+- **`##column | ##type | ##` 三列要写在同一行**（A1/B1/C1）。让 `##column` 独占 A1、`##type` 另起一行会报「**缺失 type 行**」——Luban 认不出纵表，回去按横表找 `##var` 了。
+- 第 2 行起每行一个字段：**字段名 | 类型 | 注释 | 值**。注意**第 3 列是注释列，值必须写第 4 列**；只写三列（名/型/值）会报「**单值表 mode=one，但数据个数 0 != 1**」——值被当注释吃掉了。
+- 纵表会让 Luban 按 `mode=one` 生成：`__tables__.xlsx` 的 `mode` 列被**自动填成 `one`**，不必手写。
+- 生成出来的 `TbXxx` 是**单值表**，直接暴露字段：`ConfigSystem.Instance.Tables.TbVision.MaxVision`，**没有 `GetOrDefault(id)`**（横表才有）。改成纵表后，旧的 `.GetOrDefault(1)` 会编译报错，按这个改。
+- 字段名仍然不能与表类型名同名（表类型 `Vision` → 字段不能叫 `vision`，Luban 会报「生成的 c# 字段名与类型名相同」），只能改名（我们用的是 `regionVision`）。
+
 **Q: `ExternalTypeUtil.cs` 是干什么的？**
 Luban 内建 `vector2/vector3` 等数学类型与 Godot `Vector2/Vector3` 之间的转换工具，每次生成时从 `Configs/GameConfig/CustomTemplate/` 覆盖拷贝到 `GameScripts/GameProto/`，勿手改。
 
@@ -275,4 +295,4 @@ Luban 内建 `vector2/vector3` 等数学类型与 Godot `Vector2/Vector3` 之间
 
 - [x] `ConfigSystem` 已替代原版 DataTable 框架模块（2026-07）
 - [ ] 表规模增长后切换 lazyload 生成模式
-- [ ] 当前仅 4 张表（UIForm / Character / Entity / Level），新增表按 §5 步骤添加
+- [x] 当前 11 张表（UIForm / Entity / Creep / Lane / Building / MapArea / Resources / JunglePoint / ResourcePoint / RiverPowerRune / Vision），新增表按 §5 步骤添加
