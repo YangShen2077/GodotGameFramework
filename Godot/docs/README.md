@@ -46,7 +46,7 @@
 
 ## 玩法功能
 
-> 每个玩法功能一篇，记录需求规则、红线、架构与踩坑，让 AI 改代码前快速理解。模板与维护约定见 [features/README.md](features/README.md)（功能完成即更新）。
+> 每个子系统 / 功能一篇，记录需求口径、实现对照与判据，让 AI 改代码前快速理解。模板与维护约定见 [features/README.md](features/README.md)（功能完成即更新）。
 
 
 ## 项目设计经验（architecture/）
